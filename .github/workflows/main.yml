@@ -1,0 +1,111 @@
+name: github pages
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  scan:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  deploy:
+    needs: scan
+    # use ubuntu-latest image to run steps on
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout the code
+      - uses: actions/checkout@v3.3.0
+
+      # Install .NET Core SDK
+      - name: Setup .NET Core SDK
+        uses: actions/setup-dotnet@v3.0.3
+        with:
+          # Optional SDK version(s) to use. If not provided, will install global.json version when available. Examples: 2.2.104, 3.1, 3.1.x, 3.x
+          dotnet-version: 7.0.x # optional
+          # Optional quality of the build. The possible values are: daily, signed, validated, preview, ga.
+          # dotnet-quality: # optional
+          # Optional global.json location, if your global.json isn't located in the root of the repo.
+          # global-json-file: # optional
+          # Optional package source for which to set up authentication. Will consult any existing NuGet.config in the root of the repo and provide a temporary NuGet.config using the NUGET_AUTH_TOKEN environment variable as a ClearTextPassword
+          # source-url: # optional
+          # Optional OWNER for using packages from GitHub Package Registry organizations/users other than the current repository's owner. Only used if a GPR URL is also provided in source-url
+          # owner: # optional
+          # Optional NuGet.config location, if your NuGet.config isn't located in the root of the repo.
+          # config-file: # optional          
+
+      # Install dotnet wasm buildtools workload
+      - name: Install .NET WASM Build Tools
+        run: dotnet workload install wasm-tools
+
+      # Restore solution dependencies
+      - name: Restore dependencies
+        run: dotnet restore src/mynewsite.sln
+
+      # Build solution
+      - name: Build
+        run: dotnet build src/mynewsite.sln --no-restore -c:Release
+
+      # Test solution
+      - name: Test
+        run: dotnet test src/mynewsite.sln --no-build --verbosity normal -c:Release
+          
+      # Publishes Blazor project to the release-folder
+      - name: Publish Blazor Project
+        run: dotnet publish src/mynewsite/mynewsite.csproj -c:Release -p:GHPages=true -o dist/mynewsite --nologo --no-build --no-restore
+
+      # copy index.html to 404.html to serve the same file when a file is not found
+      - name: copy index.html to 404.html
+        run: cp dist/mynewsite/wwwroot/index.html dist/mynewsite/wwwroot/404.html
+
+      # Deploy to GH pages
+      - name: Deploy to GitHub Pages
+        # You may pin to the exact commit or the version.
+        # uses: JamesIves/github-pages-deploy-action@ba1486788b0490a235422264426c45848eac35c6
+        uses: JamesIves/github-pages-deploy-action@v4.4.1
+        with:
+          # This option allows you to define a private SSH key to be used in conjunction with a repository deployment key to deploy using SSH. The private key should be stored in the `secrets / with` menu **as a secret**. The public should be stored in the repositories deployment keys menu and be given write access.
+          # Alternatively you can set this field to `true` to enable SSH endpoints for deployment without configuring the ssh client. This can be useful if you've already setup the SSH client using another package or action in a previous step.
+          # ssh-key: # optional
+          # This option defaults to the repository scoped GitHub Token.  However if you need more permissions for things such as deploying to another repository, you can add a Personal Access Token (PAT) here.  This should be stored in the `secrets / with` menu **as a secret**.
+          # We recommend using a service account with the least permissions necessary and when generating a new PAT that you select the least permission scopes required.
+          # [Learn more about creating and using encrypted secrets here.](https://help.github.com/en/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets)
+          token: ${{ secrets.TOKEN }} # optional, default is ${{ github.token }}
+          # This is the branch you wish to deploy to, for example gh-pages or docs.
+          # branch: # optional, default is gh-pages
+          # The folder in your repository that you want to deploy. If your build script compiles into a directory named build you would put it here. Folder paths cannot have a leading / or ./. If you wish to deploy the root directory you can place a . here.
+          folder: dist/mynewsite/wwwroot
+          # If you would like to push the contents of the deployment folder into a specific directory on the deployment branch you can specify it here.
+          # target-folder: # optional
+          # If you need to customize the commit message for an integration you can do so.
+          # commit-message: # optional
+          # If your project generates hashed files on build you can use this option to automatically delete them from the target folder on the deployment branch with each deploy. This option is on by default and can be toggled off by setting it to false.
+          # clean: # optional, default is true
+          # If you need to use clean but you would like to preserve certain files or folders you can use this option. This should contain each pattern as a single line in a multiline string.
+          # clean-exclude: # optional
+          # Do not actually push back, but use `--dry-run` on `git push` invocations instead.
+          # dry-run: # optional
+          # Whether to force-push and overwrite any existing deployment. Setting this to false will attempt to rebase simultaneous deployments. This option is on by default and can be toggled off by setting it to false.
+          # force: # optional, default is true
+          # Allows you to customize the name that is attached to the GitHub config which is used when pushing the deployment commits. If this is not included it will use the name in the GitHub context, followed by the name of the action.
+          # git-config-name: # optional
+          # Allows you to customize the email that is attached to the GitHub config which is used when pushing the deployment commits. If this is not included it will use the email in the GitHub context, followed by a generic noreply GitHub email.
+          # git-config-email: # optional
+          # Allows you to specify a different repository path so long as you have permissions to push to it. This should be formatted like so: owner/repo
+          # repository-name: # optional
+          # Add a tag to the commit, this can be used like so: 'v0.1'. Only works when 'dry-run' is not used.
+          # tag: # optional
+          # This option can be used if you'd prefer to have a single commit on the deployment branch instead of maintaining the full history.
+          single-commit: true
+          # Silences the action output preventing it from displaying git messages.
+          # silent: # optional
